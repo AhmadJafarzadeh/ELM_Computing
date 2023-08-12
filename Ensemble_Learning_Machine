@@ -1,0 +1,234 @@
+#----------------------------------------------------------------------------------------
+# This code is to generate the outputs of ensemble learning techniques based on the 
+# outputs of the Tree Decision regressions.
+# 
+# The ansemble methods used here are Bagging, Boosting, and Voting algorithms
+#----------------------------------------------------------------------------------------.
+
+import pandas as pd
+import numpy as np
+# To read excel data based on the column number.
+df=pd.read_csv('ML_Input.csv');
+df.head()
+
+
+# Adding x and y variables. We need to specify the x and y variables.
+# pandas.DataFrame.drop:
+# The drop() method removes the specified row or column.
+#  By specifying the column axis ( axis='columns' ), the drop() method removes the specified column.
+X = df.drop('Etc_Saffron',axis='columns')
+y = df.Etc_Saffron
+y=y*10;
+
+# Splitting the Dataset
+# We will split the scaled dataset into training and testing. 
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y,train_size=0.7, random_state=1,shuffle=False);
+# The random state is a orbitary random to control the shuffling process.
+# With random_state=None , we get different train and test sets across different executions
+# and the shuffling process is out of control. With random_state=0 or any other integers, 
+# we get the same train and test sets across different executions. Also, to keep the proportion of y, We se stratify=y.
+
+# Model building using Decision Tree regressor
+from sklearn.tree import DecisionTreeRegressor
+DTregressor = DecisionTreeRegressor(max_depth=4,random_state=0)
+
+# We will use k-fold cross-validation to build our decision tree classifier.
+# In addition, K-fold cross-validation allows us to split our dataset into various subsets or portions.
+# The model is then trained using each subset and gets the accuracy scores after each iteration. 
+# Finally, the mean accuracy score is calculated. K refers to the number of subsets/portions we split the dataset.
+from sklearn.model_selection import cross_val_score
+
+# To use the cross_val_score method, run this code:
+scores = cross_val_score(DTregressor, X, y, cv=6, scoring='neg_mean_squared_error')
+print(scores)
+print(scores.mean())
+
+# To fit the model. First, We have to fit model and then predict.
+DTregressor.fit(X, y);
+
+# Visualizing the Decision Tree in Regression Task
+# from matplotlib import pyplot as plt
+# from sklearn import tree
+# fig = plt.figure(figsize=(25,20))
+# _ = tree.plot_tree(DTregressor, feature_names=['Tmin','Tmax','Rhmin','Rhmax'], filled=True,rounded=True,fontsize=6,label='all')
+# plt.show()
+# plt.savefig('DTregressor_structure.jpg', dpi=300)
+
+# text_representation = tree.export_text(DTregressor)
+# print(text_representation)
+
+
+# To get the output at train and test.
+DTregressor_train_predic=DTregressor.predict(X_train);
+DTregressor_test_predic=DTregressor.predict(X_test);
+
+# To obtain the predited value through Cross validation
+from sklearn.model_selection import cross_val_predict
+DTregressor_predic_CV=cross_val_predict(DTregressor,X,y,cv=6)
+
+
+
+# To get the skill score at train and test.
+import hydroeval as he 
+DTregressor_train_rmse=he.evaluator(he.rmse ,DTregressor_train_predic,y_train);
+DTregressor_train_nse=he.evaluator(he.nse ,DTregressor_train_predic,y_train);
+DTregressor_test_rmse=he.evaluator(he.rmse ,DTregressor_test_predic,y_test);
+DTregressor_test_nse=he.evaluator(he.nse ,DTregressor_test_predic,y_test);
+
+# DTregressor_predict_cv_rmse=he.evaluator(he.rmse ,DTregressor_predic_CV,y);
+TDR_Predict=np.concatenate((DTregressor_train_predic,DTregressor_test_predic),axis=0)
+TDR_Predict_rmse=he.evaluator(he.rmse,TDR_Predict,y)
+TDR_Predict_nse=he.evaluator(he.nse,TDR_Predict,y)
+
+# To export and save the results.
+import csv
+data2 =zip(y, TDR_Predict);
+header2=['observation','TDR_Prediction'];
+
+with open('TDR_Output.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+
+data2 =zip(DTregressor_train_rmse, DTregressor_test_rmse,TDR_Predict_rmse,DTregressor_train_nse, DTregressor_test_nse,TDR_Predict_nse);
+header2=['RMSE_Train','RMSE_Test','RMSE_Total','NSE_Train','NSE_Test','NSE_Total'];
+with open('TDR_Performance.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+
+
+#--------------------To setup the Boosting-------------------------------------
+# Building the model using Boosting Regressor
+from sklearn.ensemble import AdaBoostRegressor
+# To create the AdaBoost regression
+AdaBoostt= AdaBoostRegressor(DecisionTreeRegressor(max_depth=4), n_estimators=300, random_state=0);
+
+# To set input and output for ML
+# X=X.T; 
+y=y.T;
+y=np.reshape(y, (len(y), )); # To fit the required size for 
+
+# To fit/train the AdaBoost model
+AdaBoostt.fit(X, y);
+
+# To get the AdaBoost's outputs at train and test parts.
+AdaBoostt_train_Output = AdaBoostt.predict(X_train);
+AdaBoostt_test_Output = AdaBoostt.predict(X_test);
+
+AdaBoost_train_RMSE=he.evaluator(he.rmse, AdaBoostt_train_Output, y_train)
+AdaBoost_test_RMSE=he.evaluator(he.rmse, AdaBoostt_test_Output, y_test)
+
+# Collecting results
+AdaBoost_Predict=np.concatenate((AdaBoostt_train_Output,AdaBoostt_test_Output),axis=0);
+AdaBoost_Predict_rmse=he.evaluator(he.rmse,AdaBoost_Predict,y);
+AdaBoost_Predict_nse=he.evaluator(he.nse,AdaBoost_Predict,y);
+
+
+
+# To export and save the results.
+data2 =zip(y*10, AdaBoost_Predict);
+header2=['observation','AdaBoost_Prediction'];
+
+with open('AdaBoost_Output.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+
+data2 =zip(AdaBoost_train_RMSE, AdaBoost_test_RMSE,AdaBoost_Predict_rmse,AdaBoost_Predict_nse);
+header2=['RMSE_Train','RMSE_Test','RMSE_Total','NSE_Total'];
+with open('AdaBoost_Performance.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+
+#-------------------------Finish Boosting------------------------------------------
+
+
+
+#-----------------------To setup Bagging-------------------------------------------
+# Building the model using Bagging Regressor
+from sklearn.ensemble import BaggingRegressor
+# To create the Baggingg regression
+Baggingg= BaggingRegressor(DecisionTreeRegressor(max_depth=4), n_estimators=300, random_state=0);
+
+# To fit/train the Bagging model
+Baggingg.fit(X, y);
+
+# To get the Baggingg's outputs at train and test parts.
+Baggingg_train_Output = Baggingg.predict(X_train);
+Baggingg_test_Output = Baggingg.predict(X_test);
+
+Baggingg_train_RMSE=he.evaluator(he.rmse, Baggingg_train_Output, y_train)
+Baggingg_test_RMSE=he.evaluator(he.rmse, Baggingg_test_Output, y_test)
+
+# Collecting results
+Baggingg_Predict=np.concatenate((Baggingg_train_Output,Baggingg_test_Output),axis=0);
+Baggingg_Predict_rmse=he.evaluator(he.rmse,Baggingg_Predict,y);
+Baggingg_Predict_nse=he.evaluator(he.nse,Baggingg_Predict,y);
+
+# To export and save the results.
+data2 =zip(y, Baggingg_Predict);
+header2=['observation','Bagging_Prediction'];
+
+with open('Bagging_Output.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+
+data2 =zip(Baggingg_train_RMSE, Baggingg_test_RMSE,Baggingg_Predict_rmse,Baggingg_Predict_nse);
+header2=['RMSE_Train','RMSE_Test','RMSE_total','NSE_total'];
+with open('Baggingg_Performance.csv', 'w',newline ='') as f:
+    writer = csv.writer(f)
+    # write the header
+    writer.writerow(header2)
+    for row in data2:
+        writer.writerow(row)
+#------------------------------Finish Bagging--------------------------------------------------
+
+#----------------------------To setup Voting--------------------------------------------------
+# Building the model using Voting Regressor
+from sklearn.ensemble import VotingRegressor
+# To create the Voting regression
+Votingg= VotingRegressor(DecisionTreeRegressor(max_depth=4), n_estimators=300, random_state=0);
+
+# To fit/train the Bagging model
+Votingg.fit(X, y);
+
+# To get the Votingg's outputs at train and test parts.
+Votingg_train_Output = Votingg.predict(X_train);
+Votingg_test_Output = Votingg.predict(X_test);
+
+Votingg_train_RMSE=he.evaluator(he.rmse, Votingg_train_Output, y_train)
+Votingg_test_RMSE=he.evaluator(he.rmse, Votingg_test_Output, y_test)
+#------------------------------Finish Voting--------------------------------------------------
+
+# NameModels=['Measuerement', 'Boosting', 'Bagging', 'Voting']
+NameModels=['Tree Decision', 'Boosting', 'Bagging', 'Voting'];
+header = ['NSE_train','RMSE_train','NSE_test','RMSE_test', 'Models'];
+RMSE_train=np.concatenate((DTregressor_train_rmse,AdaBoost_train_RMSE,Baggingg_train_RMSE,Votingg_train_RMSE),axis=0);
+RMSE_test=np.concatenate((DTregressor_test_rmse,AdaBoost_test_RMSE,Baggingg_test_RMSE,Votingg_test_RMSE),axis=0);
+data2 =zip(RMSE_train, RMSE_test,NameModels);
+
+
+
+
+DTregressor_train_predic
+AdaBoostt_train_Output 
+Baggingg_train_Output 
+Votingg_train_Output 
+
+
+print('Finish')
+
